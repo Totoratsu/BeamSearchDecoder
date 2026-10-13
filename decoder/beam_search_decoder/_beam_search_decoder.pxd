@@ -50,6 +50,7 @@ cdef extern from "beam_search.hpp" namespace "ldpc::bp":
             vector[double] log_prob_ratios
             vector[double] initial_log_prob_ratios
             int iterations
+            long long total_iterations
             bool converge
             vector[uint8_t] decode(vector[uint8_t]& syndrome)
 

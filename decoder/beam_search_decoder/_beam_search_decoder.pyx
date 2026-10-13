@@ -216,6 +216,17 @@ cdef class BeamSearchDecoderBase:
         """
         return self.bpd.iterations
 
+    @property
+    def total_iter(self) -> int:
+        """
+        Returns the number of BP iterations of the last decode, summed over the
+        initial pass and every path of every round.
+
+        Returns:
+            int: The total number of BP iterations performed by the last decode.
+        """
+        return self.bpd.total_iterations
+
 
     @property
     def check_count(self) -> int:

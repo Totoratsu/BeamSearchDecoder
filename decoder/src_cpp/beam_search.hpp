@@ -60,6 +60,9 @@ namespace ldpc {
             std::vector<double> log_prob_ratios;
             std::vector<double> initial_log_prob_ratios;
             int iterations;
+            // Every BP iteration of the last decode(), initial pass plus every
+            // path of every round; `iterations` only holds the last BP run's.
+            long long total_iterations;
             bool converge;
 
             BeamSearchDecoder(
@@ -73,7 +76,7 @@ namespace ldpc {
                     pcm(parity_check_matrix), channel_probabilities(std::move(channel_probabilities)),
                     check_count(pcm.m), bit_count(pcm.n), max_rounds(max_rounds), beam_width(beam_width), num_results(num_results),
                     initial_iters(initial_iters), iters_per_round(iters_per_round),
-                    iterations(0) //the parity check matrix is passed in by reference
+                    iterations(0), total_iterations(0) //the parity check matrix is passed in by reference
             {
 
                 this->initial_log_prob_ratios.resize(bit_count);
@@ -106,6 +109,7 @@ namespace ldpc {
             std::vector<uint8_t> &decode(std::vector<uint8_t> &syndrome) {
 
                 this->converge = 0;
+                this->total_iterations = 0;
 
                 this->initialise_log_domain_bp();
 
@@ -113,14 +117,6 @@ namespace ldpc {
                 std::priority_queue<Pair, std::vector<Pair>, std::greater<Pair>> min_pq;
                 std::vector<int> bit_masks(this->bit_count, -1);
                 std::vector<double> LLR_sums(this->bit_count, 0);
-                int edge_msgs_length = 0;
-                for (int i = 0; i < this->bit_count; i++) {
-                    edge_msgs_length += this->pcm.iterate_column(i).entry_count;
-                }
-                std::vector<std::vector<double>> edge_msgs(4 * this->beam_width, std::vector<double>(edge_msgs_length, 0));
-                std::vector<std::vector<int>> fixed_indices(4 * this->beam_width, std::vector<int>(this->max_rounds + 1, 0));
-                std::vector<std::vector<int>> fixed_values(4 * this->beam_width, std::vector<int>(this->max_rounds + 1, 0));
-                std::vector<int> converged_value(4 * this->beam_width, -1);
                 std::vector<int> explore_list;
                 std::vector<uint8_t> cur_decoding(this->bit_count, 0);
                 int start = 0, next_start = 2 * this->beam_width;
@@ -210,6 +206,7 @@ namespace ldpc {
                     }
 
                     this->iterations = it;
+                    this->total_iterations++;
 
                     if (this->converge) {
                         min_dec_weight = 0;
@@ -225,6 +222,19 @@ namespace ldpc {
                         break;
                     }
                 }
+
+                // Allocated only once the initial pass has not returned: the
+                // 4 * beam_width message copies are 4 * W * edges doubles
+                // (~60 MB for W=64 on a 30k-edge matrix), which dominated the
+                // cost of every shot that converges in the initial pass.
+                int edge_msgs_length = 0;
+                for (int i = 0; i < this->bit_count; i++) {
+                    edge_msgs_length += this->pcm.iterate_column(i).entry_count;
+                }
+                std::vector<std::vector<double>> edge_msgs(4 * this->beam_width, std::vector<double>(edge_msgs_length, 0));
+                std::vector<std::vector<int>> fixed_indices(4 * this->beam_width, std::vector<int>(this->max_rounds + 1, 0));
+                std::vector<std::vector<int>> fixed_values(4 * this->beam_width, std::vector<int>(this->max_rounds + 1, 0));
+                std::vector<int> converged_value(4 * this->beam_width, -1);
 
                 //Initialize for subsequent rounds
                 double min_score = std::abs(LLR_sums[0]);
@@ -375,6 +385,7 @@ namespace ldpc {
                             }
 
                             this->iterations = it;
+                            this->total_iterations++;
 
                             if (this->converge) {
                                 cur_dec_weight = 0;
